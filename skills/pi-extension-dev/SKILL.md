@@ -4,15 +4,17 @@ When creating, modifying, or deleting any pi extension (`~/.pi/agent/extensions/
 
 ## Repos
 
+There are two repos — one public for generic config, one private for work-specific config:
+
 | Repo | Visibility | Content |
 |------|-----------|---------|
-| `csalvato/pi-config-personal` | **Public** | Generic extensions/skills/agents (no Block references) |
-| `csalvato/pi-config-block` | **Private** | Block-specific extensions/skills (Glean, The Hub, sq agent-tools, etc.) |
+| `csalvato/pi-config-personal` | **Public** | Generic extensions, skills, and agents (portable, no employer-specific references) |
+| `csalvato/pi-config-block` | **Private** | Work-specific extensions and skills (internal tools, internal domains, VPN, etc.) |
 
 ## Which repo?
 
-- If the extension/skill references Block internals (Glean, The Hub, sq agent-tools, WARP VPN, `@block.xyz`, `@squareup.com`, `sqprod.co`, `go/` links, Workday) → **pi-config-block**
-- Everything else → **pi-config-personal**
+- If the extension/skill references **employer-internal tooling** (internal knowledge bases, HR platforms, internal CLI tools, VPN requirements, internal domains/URLs, internal email domains) → **private work repo**
+- Everything else → **public personal repo**
 
 ## Steps
 
@@ -35,4 +37,4 @@ When creating, modifying, or deleting any pi extension (`~/.pi/agent/extensions/
 ## Notes
 - Skip symlinked files (e.g. `subagent/` extensions that link to pi package examples).
 - If unsure which repo, ask the user.
-- The `pi-config` repo (private) is the legacy combined repo — no longer update it.
+- `csalvato/pi-config` is archived — do not use it.
