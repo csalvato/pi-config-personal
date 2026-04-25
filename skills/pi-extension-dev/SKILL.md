@@ -1,3 +1,11 @@
+---
+name: pi-extension-dev
+description: >
+  Sync local pi extensions, skills, and prompt/agent files to the correct GitHub config repo
+  (personal vs work-specific) whenever creating, modifying, or deleting them. Use when working
+  on pi configuration that should be preserved outside the local machine.
+---
+
 # Pi Extension & Skill Development
 
 When creating, modifying, or deleting any pi extension (`~/.pi/agent/extensions/`) or skill (`~/.pi/agent/skills/`), you MUST also push the changes to the appropriate GitHub repo.
