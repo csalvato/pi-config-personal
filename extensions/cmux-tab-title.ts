@@ -29,10 +29,34 @@ Examples:
 - User asks about wezterm tab extension → "Wezterm Tab Extension"
 - User wants to set up CI/CD → "Setup CI/CD"`;
 
-function cmux(...args: string[]): void {
-	execFile(CMUX_CLI, args, (_err) => {
-		// Silently ignore — cmux may not be running
+function cmux(...args: string[]): Promise<string> {
+	return new Promise((resolve, reject) => {
+		execFile(CMUX_CLI, args, { timeout: 5000 }, (err, stdout) => {
+			if (err) reject(err);
+			else resolve(stdout);
+		});
 	});
+}
+
+async function renameCmuxTab(title: string): Promise<void> {
+	try {
+		const stdout = await cmux("identify", "--json");
+		const identity = JSON.parse(stdout);
+		const surfaceRef = identity?.caller?.surface_ref || identity?.focused?.surface_ref;
+
+		if (surfaceRef) {
+			await cmux("rename-tab", "--surface", surfaceRef, title);
+			return;
+		}
+	} catch {
+		// Fall through to the legacy behavior below.
+	}
+
+	try {
+		await cmux("rename-tab", title);
+	} catch {
+		// Silently ignore — cmux may not be running or may not know this tab.
+	}
 }
 
 export default function (pi: ExtensionAPI) {
@@ -133,8 +157,10 @@ export default function (pi: ExtensionAPI) {
 		const prefix = repoName ? `π ${repoName}` : "π";
 		const fullTitle = `${prefix}: ${title}`;
 
-		// Set cmux tab title
-		cmux("rename-tab", fullTitle);
+		// Set cmux tab title. Resolve the caller surface first because cmux env vars
+		// can be stale when pi runs inside nested shells, causing untargeted rename-tab
+		// calls to fail with "Tab not found".
+		await renameCmuxTab(fullTitle);
 
 		// Also set the pi TUI title and session name
 		ctx.ui.setTitle(fullTitle);
