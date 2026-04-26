@@ -108,9 +108,9 @@ export default function (pi: ExtensionAPI) {
 		return messages.map((m) => m.substring(0, 200)).join("\n---\n");
 	}
 
-	async function generateTitle(conversationContext: string, ctx: ExtensionContext): Promise<string> {
+	async function generateTitle(conversationContext: string, ctx: ExtensionContext): Promise<string | null> {
 		try {
-			if (!ctx.model) return "pi";
+			if (!ctx.model) return null;
 
 			const apiKey = await ctx.modelRegistry.getApiKey(ctx.model);
 			const userMessage: UserMessage = {
@@ -133,11 +133,13 @@ export default function (pi: ExtensionAPI) {
 				.split("\n")[0]
 				.trim();
 
-			if (!title || title.length > 40) return title ? title.substring(0, 39) + "…" : "pi";
+			if (!title) return null;
+			if (/^pi$/i.test(title) || /^π$/i.test(title)) return null;
+			if (title.length > 40) return title.substring(0, 39) + "…";
 
 			return title;
 		} catch {
-			return "pi";
+			return null;
 		}
 	}
 
@@ -146,6 +148,7 @@ export default function (pi: ExtensionAPI) {
 		if (!conversationContext) return;
 
 		const title = await generateTitle(conversationContext, ctx);
+		if (!title) return;
 
 		if (title === currentTitle) return;
 
