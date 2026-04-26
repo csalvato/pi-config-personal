@@ -15,7 +15,7 @@ import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-age
 
 const CMUX_CLI = "/Applications/cmux.app/Contents/Resources/bin/cmux";
 
-const MIN_SUBSTANTIVE_LENGTH = 15;
+const MIN_SUBSTANTIVE_LENGTH = 10;
 
 const CONFIRMATION_PATTERNS =
 	/^\s*(y(es|ep|eah)?|no(pe)?|ok(ay)?|sure|thanks?|thank you|do it|go ahead|lgtm|looks good|sounds good|perfect|great|nice|cool|got it|k|👍)\s*[.!?]*\s*$/i;
@@ -108,9 +108,38 @@ export default function (pi: ExtensionAPI) {
 		return messages.map((m) => m.substring(0, 200)).join("\n---\n");
 	}
 
+	function fallbackTitle(conversationContext: string): string | null {
+		const firstLine = conversationContext
+			.split("\n---\n")
+			.at(-1)
+			?.replace(/[`*_#>]/g, "")
+			.replace(/\s+/g, " ")
+			.trim();
+
+		if (!firstLine) return null;
+
+		const words = firstLine
+			.replace(/[^\p{L}\p{N}\s/-]/gu, "")
+			.split(/\s+/)
+			.filter(Boolean)
+			.slice(0, 4);
+
+		if (words.length === 0) return null;
+
+		return words
+			.map((word) => {
+				if (/^[A-Z0-9/-]+$/.test(word)) return word;
+				return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+			})
+			.join(" ")
+			.substring(0, 40);
+	}
+
 	async function generateTitle(conversationContext: string, ctx: ExtensionContext): Promise<string | null> {
+		const fallback = fallbackTitle(conversationContext);
+
 		try {
-			if (!ctx.model) return null;
+			if (!ctx.model) return fallback;
 
 			const apiKey = await ctx.modelRegistry.getApiKey(ctx.model);
 			const userMessage: UserMessage = {
@@ -133,13 +162,13 @@ export default function (pi: ExtensionAPI) {
 				.split("\n")[0]
 				.trim();
 
-			if (!title) return null;
-			if (/^pi$/i.test(title) || /^π$/i.test(title)) return null;
+			if (!title) return fallback;
+			if (/^pi$/i.test(title) || /^π$/i.test(title)) return fallback;
 			if (title.length > 40) return title.substring(0, 39) + "…";
 
 			return title;
 		} catch {
-			return null;
+			return fallback;
 		}
 	}
 
