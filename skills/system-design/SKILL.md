@@ -2,7 +2,7 @@
 name: system-design
 description: >
   Guide a system design from zero to complete document through a structured
-  10-phase process: framing, requirements, JTBD, boundaries, domain model,
+  10-phase process: framing, JTBD, requirements, boundaries, domain model,
   data model, operational flows, implementation, consistency passes, and
   stakeholder artifacts. Use when starting a new system design, resuming
   one in progress, or running a specific phase (e.g. consistency check).
@@ -81,17 +81,42 @@ See [references/examples/scqa-example.md](references/examples/scqa-example.md).
 
 ---
 
-### Phase 2: Requirements Extraction
+### Phase 2: Jobs to Be Done
 
-**Goal:** Capture what the system must do and how well it must do it.
+**Goal:** Define what the system does from the perspective of each actor before writing requirements.
 
-Do not ask the user to list requirements. Instead, ask pointed questions:
-- "When X happens, what should the system do?"
-- "Who triggers this? What do they need back?"
-- "What's the failure mode if this doesn't work?"
+Actors are humans, not systems. "Calling system" is really a product owner,
+an engineer, a compliance officer. Name the real person behind the system.
 
 Checklist:
-- [ ] Extract functional requirements via pointed Q&A with the user
+- [ ] Identify all actors (human roles, not systems)
+- [ ] Write JTBD for each actor: "As a [actor], I want to [action], so that [outcome]"
+- [ ] Group JTBD by actor with clear section breaks
+- [ ] Share JTBD with user for validation before proceeding
+
+**Why this matters:** JTBD are the source material for requirements and
+become the throughline for the entire design. Never finalize functional
+requirements before writing and validating JTBD. Requirements are derived
+from jobs, not the other way around. If a JTBD can't be satisfied, the
+design has a gap.
+
+See [references/examples/jtbd-example.md](references/examples/jtbd-example.md).
+
+---
+
+### Phase 3: Requirements Extraction
+
+**Goal:** Derive what the system must do and how well it must do it from validated JTBD.
+
+Do not ask the user to list requirements. Instead, use the JTBD and ask pointed questions:
+- "For this job, when X happens, what should the system do?"
+- "Who triggers this? What do they need back?"
+- "What's the failure mode if this job can't be completed?"
+- "What must be true for this job to feel successful?"
+
+Checklist:
+- [ ] Extract functional requirements from validated JTBD via pointed Q&A with the user
+- [ ] Map every functional requirement to at least one JTBD
 - [ ] Ground key domain terms in industry standards (web search, 3+ sources per term)
 - [ ] Build initial glossary with verified terms
 - [ ] Extract NFRs using the structured questionnaire
@@ -103,28 +128,6 @@ If the term the user or you use doesn't match industry usage, flag it immediatel
 Don't wait. Wrong terminology compounds into wrong mental models.
 
 See [references/examples/nfr-questionnaire.md](references/examples/nfr-questionnaire.md).
-
----
-
-### Phase 3: Jobs to Be Done
-
-**Goal:** Define what the system does from the perspective of each actor.
-
-Actors are humans, not systems. "Calling system" is really a product owner,
-an engineer, a compliance officer. Name the real person behind the system.
-
-Checklist:
-- [ ] Identify all actors (human roles, not systems)
-- [ ] Write JTBD for each actor: "As a [actor], I want to [action], so that [outcome]"
-- [ ] Group JTBD by actor with clear section breaks
-- [ ] Cross-check: does every functional requirement map to at least one JTBD?
-- [ ] Share JTBD with user for validation before proceeding
-
-**Why this matters:** JTBD become the throughline for the entire design.
-You will come back to them repeatedly to verify the design satisfies
-every stated need. If a JTBD can't be satisfied, the design has a gap.
-
-See [references/examples/jtbd-example.md](references/examples/jtbd-example.md).
 
 ---
 

@@ -15,20 +15,20 @@
 - [ ] SCQA overview drafted
 - [ ] Explicit exclusions documented (what this system is NOT)
 
-## Phase 2: Requirements Extraction
-- [ ] Functional requirements extracted via Q&A
+## Phase 2: Jobs to Be Done
+- [ ] All actors identified (human roles, not systems)
+- [ ] JTBD written for each actor
+- [ ] JTBD grouped by actor
+- [ ] User validated JTBD before proceeding
+
+## Phase 3: Requirements Extraction
+- [ ] Functional requirements extracted from validated JTBD via Q&A
+- [ ] Every functional requirement maps to ≥1 JTBD
 - [ ] Domain terms grounded in industry standards (3+ sources each)
 - [ ] Glossary started with verified terms
 - [ ] NFRs extracted via structured questionnaire
 - [ ] Each NFR marked CONFIRMED or ASSUMED
 - [ ] Buy-vs-build captured as open question (if applicable)
-
-## Phase 3: Jobs to Be Done
-- [ ] All actors identified (human roles, not systems)
-- [ ] JTBD written for each actor
-- [ ] JTBD grouped by actor
-- [ ] Every functional requirement maps to ≥1 JTBD
-- [ ] User validated JTBD before proceeding
 
 ## Phase 4: Interface & Boundaries
 - [ ] Interface options enumerated (≥3 per decision point)

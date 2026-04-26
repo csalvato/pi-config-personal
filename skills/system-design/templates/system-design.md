@@ -39,7 +39,7 @@ graph TD
 
 ### 4.1 Functional Requirements
 
-<!-- Extracted via Q&A. Each requirement should map to ≥1 JTBD. -->
+<!-- Derived from validated JTBD via Q&A. Each requirement must map to ≥1 JTBD. Do not finalize requirements before JTBD are written and validated. -->
 
 ### 4.2 Non-Functional Requirements
 
