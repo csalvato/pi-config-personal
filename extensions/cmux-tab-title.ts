@@ -10,12 +10,22 @@
  */
 
 import { execFile } from "node:child_process";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 import { complete, type UserMessage } from "@mariozechner/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 
 const CMUX_CLI = "/Applications/cmux.app/Contents/Resources/bin/cmux";
+const STATE_PATH = join(homedir(), ".pi", "agent", "state", "cmux-tab-title.json");
 
 const MIN_SUBSTANTIVE_LENGTH = 10;
+
+// Titles produced by this extension look like "π repo: Topic" or "π: Topic".
+const AUTO_TITLE_PATTERN = /^π(?:\s+[^:]+)?:\s+.+$/;
+
+// pi's normal terminal title before this extension renames the cmux tab.
+const PI_DEFAULT_TITLE_PATTERN = /^π(?:\s+-\s+.+|:\s*pi)?$/i;
 
 const CONFIRMATION_PATTERNS =
 	/^\s*(y(es|ep|eah)?|no(pe)?|ok(ay)?|sure|thanks?|thank you|do it|go ahead|lgtm|looks good|sounds good|perfect|great|nice|cool|got it|k|👍)\s*[.!?]*\s*$/i;
@@ -38,24 +48,99 @@ function cmux(...args: string[]): Promise<string> {
 	});
 }
 
-async function renameCmuxTab(title: string): Promise<void> {
-	try {
-		const stdout = await cmux("identify", "--json");
-		const identity = JSON.parse(stdout);
-		const surfaceRef = identity?.caller?.surface_ref || identity?.focused?.surface_ref;
+type CmuxIdentity = {
+	socket_path?: string;
+	caller?: { surface_ref?: string; tab_ref?: string };
+	focused?: { surface_ref?: string; tab_ref?: string };
+};
 
-		if (surfaceRef) {
-			await cmux("rename-tab", "--surface", surfaceRef, title);
-			return;
-		}
+type TabTitleState = {
+	tabs?: Record<string, { lastAutoTitle?: string; manualOverride?: boolean }>;
+};
+
+async function getCmuxIdentity(): Promise<CmuxIdentity | null> {
+	try {
+		return JSON.parse(await cmux("identify", "--json"));
 	} catch {
-		// Fall through to the legacy behavior below.
+		return null;
+	}
+}
+
+function getSurfaceRef(identity: CmuxIdentity | null): string | undefined {
+	return identity?.caller?.surface_ref || identity?.focused?.surface_ref;
+}
+
+function getTabStateKey(identity: CmuxIdentity | null): string | null {
+	const ref = identity?.caller?.tab_ref || identity?.caller?.surface_ref || identity?.focused?.tab_ref || identity?.focused?.surface_ref;
+	if (!ref) return null;
+	return `${identity?.socket_path || "cmux"}:${ref}`;
+}
+
+async function readState(): Promise<TabTitleState> {
+	try {
+		return JSON.parse(await readFile(STATE_PATH, "utf8"));
+	} catch {
+		return { tabs: {} };
+	}
+}
+
+async function writeState(state: TabTitleState): Promise<void> {
+	await mkdir(dirname(STATE_PATH), { recursive: true });
+	await writeFile(STATE_PATH, JSON.stringify(state, null, 2) + "\n", "utf8");
+}
+
+async function getCurrentCmuxTabTitle(surfaceRef: string | undefined): Promise<string | null> {
+	if (!surfaceRef) return null;
+
+	try {
+		const tree = JSON.parse(await cmux("tree", "--all", "--json"));
+		const stack: unknown[] = [tree];
+
+		while (stack.length > 0) {
+			const item = stack.pop();
+			if (!item || typeof item !== "object") continue;
+
+			const record = item as Record<string, unknown>;
+			if (record.ref === surfaceRef && typeof record.title === "string") {
+				return record.title;
+			}
+
+			for (const value of Object.values(record)) {
+				if (Array.isArray(value)) stack.push(...value);
+				else if (value && typeof value === "object") stack.push(value);
+			}
+		}
+	} catch {}
+
+	return null;
+}
+
+function shouldTreatExistingTitleAsManual(title: string): boolean {
+	if (!title.trim()) return false;
+	if (AUTO_TITLE_PATTERN.test(title)) return false;
+	if (PI_DEFAULT_TITLE_PATTERN.test(title)) return false;
+	if (/^untitled$/i.test(title)) return false;
+	return true;
+}
+
+async function renameCmuxTab(title: string, identity: CmuxIdentity | null): Promise<boolean> {
+	const surfaceRef = getSurfaceRef(identity);
+
+	if (surfaceRef) {
+		try {
+			await cmux("rename-tab", "--surface", surfaceRef, title);
+			return true;
+		} catch {
+			// Fall through to the legacy behavior below.
+		}
 	}
 
 	try {
 		await cmux("rename-tab", title);
+		return true;
 	} catch {
 		// Silently ignore — cmux may not be running or may not know this tab.
+		return false;
 	}
 }
 
@@ -189,10 +274,41 @@ export default function (pi: ExtensionAPI) {
 		const prefix = repoName ? `π ${repoName}` : "π";
 		const fullTitle = `${prefix}: ${title}`;
 
+		const identity = await getCmuxIdentity();
+		const surfaceRef = getSurfaceRef(identity);
+		const stateKey = getTabStateKey(identity);
+		const state = await readState();
+		const tabState = stateKey ? state.tabs?.[stateKey] : undefined;
+		const existingTitle = await getCurrentCmuxTabTitle(surfaceRef);
+
+		if (tabState?.manualOverride) return;
+
+		if (existingTitle) {
+			const lastAutoTitle = tabState?.lastAutoTitle;
+			const manuallyRenamed = lastAutoTitle
+				? existingTitle !== lastAutoTitle
+				: shouldTreatExistingTitleAsManual(existingTitle);
+
+			if (manuallyRenamed) {
+				if (stateKey) {
+					state.tabs ??= {};
+					state.tabs[stateKey] = { ...tabState, manualOverride: true };
+					await writeState(state);
+				}
+				return;
+			}
+		}
+
 		// Set cmux tab title. Resolve the caller surface first because cmux env vars
 		// can be stale when pi runs inside nested shells, causing untargeted rename-tab
 		// calls to fail with "Tab not found".
-		await renameCmuxTab(fullTitle);
+		const renamed = await renameCmuxTab(fullTitle, identity);
+
+		if (renamed && stateKey) {
+			state.tabs ??= {};
+			state.tabs[stateKey] = { lastAutoTitle: fullTitle };
+			await writeState(state);
+		}
 
 		// Also set the pi TUI title and session name
 		ctx.ui.setTitle(fullTitle);
@@ -200,8 +316,9 @@ export default function (pi: ExtensionAPI) {
 		currentTitle = title;
 	});
 
-	// Reset on new session
-	pi.on("session_switch", async (_event, _ctx) => {
+	// Reset per-session in-memory caches. Persistent tab state still protects
+	// manually-renamed cmux tabs across /reload and pi restarts.
+	pi.on("session_start", async (_event, _ctx) => {
 		currentTitle = null;
 		repoName = null;
 	});
