@@ -10,22 +10,12 @@
  */
 
 import { execFile } from "node:child_process";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { dirname, join } from "node:path";
-import { complete, type UserMessage } from "@mariozechner/pi-ai";
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { complete, type UserMessage } from "@earendil-works/pi-ai";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
-const CMUX_CLI = "/Applications/cmux.app/Contents/Resources/bin/cmux";
-const STATE_PATH = join(homedir(), ".pi", "agent", "state", "cmux-tab-title.json");
+const CMUX_CLI = process.env.CMUX_BUNDLED_CLI_PATH || "/Applications/cmux.app/Contents/Resources/bin/cmux";
 
-const MIN_SUBSTANTIVE_LENGTH = 10;
-
-// Titles produced by this extension look like "π repo: Topic" or "π: Topic".
-const AUTO_TITLE_PATTERN = /^π(?:\s+[^:]+)?:\s+.+$/;
-
-// pi's normal terminal title before this extension renames the cmux tab.
-const PI_DEFAULT_TITLE_PATTERN = /^π(?:\s+-\s+.+|:\s*pi)?$/i;
+const MIN_SUBSTANTIVE_LENGTH = 15;
 
 const CONFIRMATION_PATTERNS =
 	/^\s*(y(es|ep|eah)?|no(pe)?|ok(ay)?|sure|thanks?|thank you|do it|go ahead|lgtm|looks good|sounds good|perfect|great|nice|cool|got it|k|👍)\s*[.!?]*\s*$/i;
@@ -39,109 +29,10 @@ Examples:
 - User asks about wezterm tab extension → "Wezterm Tab Extension"
 - User wants to set up CI/CD → "Setup CI/CD"`;
 
-function cmux(...args: string[]): Promise<string> {
-	return new Promise((resolve, reject) => {
-		execFile(CMUX_CLI, args, { timeout: 5000 }, (err, stdout) => {
-			if (err) reject(err);
-			else resolve(stdout);
-		});
+function cmux(...args: string[]): void {
+	execFile(CMUX_CLI, args, (_err) => {
+		// Silently ignore — cmux may not be running
 	});
-}
-
-type CmuxIdentity = {
-	socket_path?: string;
-	caller?: { surface_ref?: string; tab_ref?: string };
-	focused?: { surface_ref?: string; tab_ref?: string };
-};
-
-type TabTitleState = {
-	tabs?: Record<string, { lastAutoTitle?: string; manualOverride?: boolean }>;
-};
-
-async function getCmuxIdentity(): Promise<CmuxIdentity | null> {
-	try {
-		return JSON.parse(await cmux("identify", "--json"));
-	} catch {
-		return null;
-	}
-}
-
-function getSurfaceRef(identity: CmuxIdentity | null): string | undefined {
-	return identity?.caller?.surface_ref || identity?.focused?.surface_ref;
-}
-
-function getTabStateKey(identity: CmuxIdentity | null): string | null {
-	const ref = identity?.caller?.tab_ref || identity?.caller?.surface_ref || identity?.focused?.tab_ref || identity?.focused?.surface_ref;
-	if (!ref) return null;
-	return `${identity?.socket_path || "cmux"}:${ref}`;
-}
-
-async function readState(): Promise<TabTitleState> {
-	try {
-		return JSON.parse(await readFile(STATE_PATH, "utf8"));
-	} catch {
-		return { tabs: {} };
-	}
-}
-
-async function writeState(state: TabTitleState): Promise<void> {
-	await mkdir(dirname(STATE_PATH), { recursive: true });
-	await writeFile(STATE_PATH, JSON.stringify(state, null, 2) + "\n", "utf8");
-}
-
-async function getCurrentCmuxTabTitle(surfaceRef: string | undefined): Promise<string | null> {
-	if (!surfaceRef) return null;
-
-	try {
-		const tree = JSON.parse(await cmux("tree", "--all", "--json"));
-		const stack: unknown[] = [tree];
-
-		while (stack.length > 0) {
-			const item = stack.pop();
-			if (!item || typeof item !== "object") continue;
-
-			const record = item as Record<string, unknown>;
-			if (record.ref === surfaceRef && typeof record.title === "string") {
-				return record.title;
-			}
-
-			for (const value of Object.values(record)) {
-				if (Array.isArray(value)) stack.push(...value);
-				else if (value && typeof value === "object") stack.push(value);
-			}
-		}
-	} catch {}
-
-	return null;
-}
-
-function shouldTreatExistingTitleAsManual(title: string): boolean {
-	if (!title.trim()) return false;
-	if (AUTO_TITLE_PATTERN.test(title)) return false;
-	if (PI_DEFAULT_TITLE_PATTERN.test(title)) return false;
-	if (/^untitled$/i.test(title)) return false;
-	return true;
-}
-
-async function renameCmuxTab(title: string, identity: CmuxIdentity | null): Promise<boolean> {
-	const surfaceRef = getSurfaceRef(identity);
-
-	if (surfaceRef) {
-		try {
-			await cmux("rename-tab", "--surface", surfaceRef, title);
-			return true;
-		} catch {
-			// Fall through to the legacy behavior below.
-		}
-	}
-
-	try {
-		await cmux("rename-tab", title);
-		return true;
-	} catch {
-		// Silently ignore — cmux may not be running or may not know this tab.
-		return false;
-	}
 }
 
 export default function (pi: ExtensionAPI) {
@@ -193,38 +84,58 @@ export default function (pi: ExtensionAPI) {
 		return messages.map((m) => m.substring(0, 200)).join("\n---\n");
 	}
 
-	function fallbackTitle(conversationContext: string): string | null {
-		const firstLine = conversationContext
-			.split("\n---\n")
-			.at(-1)
-			?.replace(/[`*_#>]/g, "")
+	function fallbackTitle(conversationContext: string): string {
+		const latestMessage = conversationContext.split("\n---\n").pop() || conversationContext;
+		const cleaned = latestMessage
+			.replace(/```[\s\S]*?```/g, " ")
+			.replace(/`[^`]*`/g, " ")
+			.replace(/https?:\/\/\S+/g, " ")
+			.replace(/[^a-zA-Z0-9+#.\s-]/g, " ")
 			.replace(/\s+/g, " ")
 			.trim();
 
-		if (!firstLine) return null;
+		const stopWords = new Set([
+			"a",
+			"an",
+			"and",
+			"are",
+			"can",
+			"could",
+			"for",
+			"from",
+			"how",
+			"into",
+			"is",
+			"it",
+			"looks",
+			"like",
+			"me",
+			"of",
+			"on",
+			"please",
+			"that",
+			"the",
+			"this",
+			"to",
+			"we",
+			"what",
+			"when",
+			"with",
+			"you",
+		]);
 
-		const words = firstLine
-			.replace(/[^\p{L}\p{N}\s/-]/gu, "")
-			.split(/\s+/)
-			.filter(Boolean)
+		const words = cleaned
+			.split(" ")
+			.filter((word) => word.length > 2 && !stopWords.has(word.toLowerCase()))
 			.slice(0, 4);
 
-		if (words.length === 0) return null;
-
-		return words
-			.map((word) => {
-				if (/^[A-Z0-9/-]+$/.test(word)) return word;
-				return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
-			})
-			.join(" ")
-			.substring(0, 40);
+		if (words.length === 0) return "Pi";
+		return words.map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ").substring(0, 40);
 	}
 
-	async function generateTitle(conversationContext: string, ctx: ExtensionContext): Promise<string | null> {
-		const fallback = fallbackTitle(conversationContext);
-
+	async function generateTitle(conversationContext: string, ctx: ExtensionContext): Promise<string> {
 		try {
-			if (!ctx.model) return fallback;
+			if (!ctx.model) return fallbackTitle(conversationContext);
 
 			const apiKey = await ctx.modelRegistry.getApiKey(ctx.model);
 			const userMessage: UserMessage = {
@@ -236,8 +147,10 @@ export default function (pi: ExtensionAPI) {
 			const response = await complete(
 				ctx.model,
 				{ systemPrompt: TITLE_SYSTEM_PROMPT, messages: [userMessage] },
-				{ apiKey, timeout: 10000 },
+				{ apiKey, timeoutMs: 10000 },
 			);
+
+			if (response.stopReason === "error") return fallbackTitle(conversationContext);
 
 			const title = response.content
 				.filter((c): c is { type: "text"; text: string } => c.type === "text")
@@ -247,13 +160,11 @@ export default function (pi: ExtensionAPI) {
 				.split("\n")[0]
 				.trim();
 
-			if (!title) return fallback;
-			if (/^pi$/i.test(title) || /^π$/i.test(title)) return fallback;
-			if (title.length > 40) return title.substring(0, 39) + "…";
+			if (!title || title.length > 40) return title ? title.substring(0, 39) + "…" : fallbackTitle(conversationContext);
 
 			return title;
 		} catch {
-			return fallback;
+			return fallbackTitle(conversationContext);
 		}
 	}
 
@@ -262,7 +173,6 @@ export default function (pi: ExtensionAPI) {
 		if (!conversationContext) return;
 
 		const title = await generateTitle(conversationContext, ctx);
-		if (!title) return;
 
 		if (title === currentTitle) return;
 
@@ -274,41 +184,15 @@ export default function (pi: ExtensionAPI) {
 		const prefix = repoName ? `π ${repoName}` : "π";
 		const fullTitle = `${prefix}: ${title}`;
 
-		const identity = await getCmuxIdentity();
-		const surfaceRef = getSurfaceRef(identity);
-		const stateKey = getTabStateKey(identity);
-		const state = await readState();
-		const tabState = stateKey ? state.tabs?.[stateKey] : undefined;
-		const existingTitle = await getCurrentCmuxTabTitle(surfaceRef);
-
-		if (tabState?.manualOverride) return;
-
-		if (existingTitle) {
-			const lastAutoTitle = tabState?.lastAutoTitle;
-			const manuallyRenamed = lastAutoTitle
-				? existingTitle !== lastAutoTitle
-				: shouldTreatExistingTitleAsManual(existingTitle);
-
-			if (manuallyRenamed) {
-				if (stateKey) {
-					state.tabs ??= {};
-					state.tabs[stateKey] = { ...tabState, manualOverride: true };
-					await writeState(state);
-				}
-				return;
-			}
-		}
-
-		// Set cmux tab title. Resolve the caller surface first because cmux env vars
-		// can be stale when pi runs inside nested shells, causing untargeted rename-tab
-		// calls to fail with "Tab not found".
-		const renamed = await renameCmuxTab(fullTitle, identity);
-
-		if (renamed && stateKey) {
-			state.tabs ??= {};
-			state.tabs[stateKey] = { lastAutoTitle: fullTitle };
-			await writeState(state);
-		}
+		// Set cmux tab title. Pass explicit workspace/tab IDs so background panes
+		// and focus changes don't cause the rename to target the wrong tab.
+		const args = ["rename-tab"];
+		if (process.env.CMUX_WORKSPACE_ID) args.push("--workspace", process.env.CMUX_WORKSPACE_ID);
+		// CMUX_TAB_ID can be stale/invalid in some embedded shells; CMUX_SURFACE_ID
+		// reliably maps back to the owning tab.
+		if (process.env.CMUX_SURFACE_ID) args.push("--surface", process.env.CMUX_SURFACE_ID);
+		args.push(fullTitle);
+		cmux(...args);
 
 		// Also set the pi TUI title and session name
 		ctx.ui.setTitle(fullTitle);
@@ -316,9 +200,8 @@ export default function (pi: ExtensionAPI) {
 		currentTitle = title;
 	});
 
-	// Reset per-session in-memory caches. Persistent tab state still protects
-	// manually-renamed cmux tabs across /reload and pi restarts.
-	pi.on("session_start", async (_event, _ctx) => {
+	// Reset on new session
+	pi.on("session_switch", async (_event, _ctx) => {
 		currentTitle = null;
 		repoName = null;
 	});

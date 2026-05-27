@@ -12,8 +12,8 @@
  * and non-empty when the user explicitly sets it.
  */
 
-import { complete, type UserMessage } from "@mariozechner/pi-ai";
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { complete, type UserMessage } from "@earendil-works/pi-ai";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 const MIN_SUBSTANTIVE_LENGTH = 15;
 
@@ -96,9 +96,58 @@ export default function (pi: ExtensionAPI) {
 		return messages.map((m) => m.substring(0, 200)).join("\n---\n");
 	}
 
+	function fallbackTitle(conversationContext: string): string {
+		const latestMessage = conversationContext.split("\n---\n").pop() || conversationContext;
+		const cleaned = latestMessage
+			.replace(/```[\s\S]*?```/g, " ")
+			.replace(/`[^`]*`/g, " ")
+			.replace(/https?:\/\/\S+/g, " ")
+			.replace(/[^a-zA-Z0-9+#.\s-]/g, " ")
+			.replace(/\s+/g, " ")
+			.trim();
+
+		const stopWords = new Set([
+			"a",
+			"an",
+			"and",
+			"are",
+			"can",
+			"could",
+			"for",
+			"from",
+			"how",
+			"into",
+			"is",
+			"it",
+			"looks",
+			"like",
+			"me",
+			"of",
+			"on",
+			"please",
+			"that",
+			"the",
+			"this",
+			"to",
+			"we",
+			"what",
+			"when",
+			"with",
+			"you",
+		]);
+
+		const words = cleaned
+			.split(" ")
+			.filter((word) => word.length > 2 && !stopWords.has(word.toLowerCase()))
+			.slice(0, 4);
+
+		if (words.length === 0) return "Pi";
+		return words.map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ").substring(0, 40);
+	}
+
 	async function generateTitle(conversationContext: string, ctx: ExtensionContext): Promise<string> {
 		try {
-			if (!ctx.model) return "pi";
+			if (!ctx.model) return fallbackTitle(conversationContext);
 
 			const apiKey = await ctx.modelRegistry.getApiKey(ctx.model);
 			const userMessage: UserMessage = {
@@ -110,8 +159,10 @@ export default function (pi: ExtensionAPI) {
 			const response = await complete(
 				ctx.model,
 				{ systemPrompt: TITLE_SYSTEM_PROMPT, messages: [userMessage] },
-				{ apiKey, timeout: 10000 },
+				{ apiKey, timeoutMs: 10000 },
 			);
+
+			if (response.stopReason === "error") return fallbackTitle(conversationContext);
 
 			const title = response.content
 				.filter((c): c is { type: "text"; text: string } => c.type === "text")
@@ -122,11 +173,11 @@ export default function (pi: ExtensionAPI) {
 				.trim();
 
 			// Sanity check: if the LLM returned something too long or empty, fall back
-			if (!title || title.length > 40) return title ? title.substring(0, 39) + "…" : "pi";
+			if (!title || title.length > 40) return title ? title.substring(0, 39) + "…" : fallbackTitle(conversationContext);
 
 			return title;
 		} catch {
-			return "pi";
+			return fallbackTitle(conversationContext);
 		}
 	}
 
