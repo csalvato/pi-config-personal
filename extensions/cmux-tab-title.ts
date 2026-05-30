@@ -35,12 +35,40 @@ function cmux(...args: string[]): void {
 	});
 }
 
+function cmuxOutput(...args: string[]): Promise<string | null> {
+	return new Promise((resolve) => {
+		execFile(CMUX_CLI, args, { timeout: 3000 }, (err, stdout) => {
+			if (err) return resolve(null);
+			resolve(stdout);
+		});
+	});
+}
+
+function findSurfaceTitle(node: any, surfaceRef: string): string | null {
+	if (!node || typeof node !== "object") return null;
+	if (node.ref === surfaceRef && typeof node.title === "string") return node.title;
+	for (const value of Object.values(node)) {
+		if (Array.isArray(value)) {
+			for (const item of value) {
+				const title = findSurfaceTitle(item, surfaceRef);
+				if (title !== null) return title;
+			}
+		} else if (value && typeof value === "object") {
+			const title = findSurfaceTitle(value, surfaceRef);
+			if (title !== null) return title;
+		}
+	}
+	return null;
+}
+
 export default function (pi: ExtensionAPI) {
 	const inCmux = !!process.env.CMUX_WORKSPACE_ID;
 	if (!inCmux) return;
 
 	let currentTitle: string | null = null;
 	let repoName: string | null = null;
+	let lastAutoFullTitle: string | null = null;
+	let manualOverride = false;
 
 	async function getRepoName(): Promise<string | null> {
 		try {
@@ -50,6 +78,41 @@ export default function (pi: ExtensionAPI) {
 			}
 		} catch {}
 		return null;
+	}
+
+	async function getCallerTarget(): Promise<{ workspaceRef?: string; surfaceRef?: string }> {
+		try {
+			const output = await cmuxOutput("identify");
+			if (!output) return {};
+			const identify = JSON.parse(output);
+			return {
+				workspaceRef: identify?.caller?.workspace_ref,
+				surfaceRef: identify?.caller?.surface_ref,
+			};
+		} catch {
+			return {};
+		}
+	}
+
+	async function getCurrentCmuxTitle(): Promise<string | null> {
+		try {
+			const { workspaceRef, surfaceRef } = await getCallerTarget();
+			if (!workspaceRef || !surfaceRef) return null;
+			const output = await cmuxOutput("tree", "--workspace", workspaceRef, "--json");
+			if (!output) return null;
+			return findSurfaceTitle(JSON.parse(output), surfaceRef);
+		} catch {
+			return null;
+		}
+	}
+
+	function isDefaultOrAutoTitle(title: string | null): boolean {
+		if (!title) return true;
+		const trimmed = title.trim();
+		if (!trimmed) return true;
+		if (trimmed.startsWith("π")) return true;
+		if (lastAutoFullTitle && trimmed === lastAutoFullTitle) return true;
+		return /^(pi|zsh|bash|fish|node|npm|pnpm|yarn|npx|terminal)$/i.test(trimmed);
 	}
 
 	function isSubstantive(text: string): boolean {
@@ -168,7 +231,32 @@ export default function (pi: ExtensionAPI) {
 		}
 	}
 
+	pi.on("session_start", async (_event, ctx) => {
+		currentTitle = null;
+		repoName = null;
+		manualOverride = false;
+
+		for (const entry of ctx.sessionManager.getEntries()) {
+			if (entry.type !== "custom" || entry.customType !== "cmux-tab-title") continue;
+			const data = (entry as any).data;
+			if (data && typeof data.fullTitle === "string") {
+				lastAutoFullTitle = data.fullTitle;
+			}
+			if (data && typeof data.title === "string") {
+				currentTitle = data.title;
+			}
+		}
+	});
+
 	pi.on("agent_end", async (_event, ctx) => {
+		if (manualOverride) return;
+
+		const cmuxTitle = await getCurrentCmuxTitle();
+		if (!isDefaultOrAutoTitle(cmuxTitle)) {
+			manualOverride = true;
+			return;
+		}
+
 		const conversationContext = getConversationContext(ctx);
 		if (!conversationContext) return;
 
@@ -184,13 +272,12 @@ export default function (pi: ExtensionAPI) {
 		const prefix = repoName ? `π ${repoName}` : "π";
 		const fullTitle = `${prefix}: ${title}`;
 
-		// Set cmux tab title. Pass explicit workspace/tab IDs so background panes
+		// Set cmux tab title. Pass explicit workspace/surface refs so background panes
 		// and focus changes don't cause the rename to target the wrong tab.
+		const target = await getCallerTarget();
 		const args = ["rename-tab"];
-		if (process.env.CMUX_WORKSPACE_ID) args.push("--workspace", process.env.CMUX_WORKSPACE_ID);
-		// CMUX_TAB_ID can be stale/invalid in some embedded shells; CMUX_SURFACE_ID
-		// reliably maps back to the owning tab.
-		if (process.env.CMUX_SURFACE_ID) args.push("--surface", process.env.CMUX_SURFACE_ID);
+		if (target.workspaceRef) args.push("--workspace", target.workspaceRef);
+		if (target.surfaceRef) args.push("--surface", target.surfaceRef);
 		args.push(fullTitle);
 		cmux(...args);
 
@@ -198,11 +285,15 @@ export default function (pi: ExtensionAPI) {
 		ctx.ui.setTitle(fullTitle);
 		pi.setSessionName(title);
 		currentTitle = title;
+		lastAutoFullTitle = fullTitle;
+		pi.appendEntry("cmux-tab-title", { title, fullTitle });
 	});
 
 	// Reset on new session
 	pi.on("session_switch", async (_event, _ctx) => {
 		currentTitle = null;
 		repoName = null;
+		lastAutoFullTitle = null;
+		manualOverride = false;
 	});
 }
