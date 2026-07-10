@@ -7,7 +7,14 @@
  * (bash, read, write, edit) into the new worktree — zero interruption to the
  * agent's flow.
  *
- * The only time the user is asked: when the derived branch name collides with
+ * Branch names follow the Linear-friendly format:
+ *   <ldap>/<linear-id>/<short-description>   e.g. csalvato/gtme-123/fix-lead-claims
+ * The Linear issue ID is extracted from the first user message (plain ID or
+ * linear.app URL). If none is found, the user is prompted once (blank to skip,
+ * producing <ldap>/<short-description>). Embedding the issue ID lets Linear's
+ * GitHub integration auto-link the PR and auto-update issue status.
+ *
+ * The user is also asked when the derived branch name collides with
  * an existing branch/worktree.
  *
  * Required mode:
@@ -28,6 +35,7 @@ import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-age
 import { isToolCallEventType } from "@mariozechner/pi-coding-agent";
 import { execSync, spawnSync } from "node:child_process";
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 
 // ─── Git helpers ──────────────────────────────────────────────────────────────
@@ -127,6 +135,28 @@ function remoteMainBranch(repoRoot: string): string {
 
 // ─── Branch name derivation ───────────────────────────────────────────────────
 
+/** LDAP/username used as the branch prefix (from git email, falls back to OS user) */
+function getLdap(repoRoot: string): string {
+  const email = git(["config", "user.email"], repoRoot).stdout;
+  if (email.includes("@")) return email.split("@")[0].toLowerCase();
+  try {
+    return os.userInfo().username.toLowerCase();
+  } catch {
+    return "dev";
+  }
+}
+
+/** Linear issue identifiers as typically written: GTME-123 (uppercase, case-sensitive) */
+const LINEAR_ID_RE = /\b[A-Z][A-Z0-9]{1,9}-\d{1,6}\b/;
+
+/** Extract a Linear issue ID from free text (linear.app URL or bare uppercase ID) */
+function extractLinearId(text: string): string | null {
+  const url = text.match(/linear\.app\/[^/\s]+\/issue\/([A-Za-z][A-Za-z0-9]{1,9}-\d{1,6})/i);
+  if (url) return url[1].toLowerCase();
+  const m = text.match(LINEAR_ID_RE);
+  return m ? m[0].toLowerCase() : null;
+}
+
 const STOP_WORDS = new Set([
   "a", "an", "the", "and", "or", "but", "in", "on", "at", "to", "for",
   "of", "with", "by", "from", "is", "it", "be", "as", "do", "use",
@@ -134,9 +164,14 @@ const STOP_WORDS = new Set([
   "please", "should", "would", "could", "all", "any", "some",
 ]);
 
-/** Derive a kebab-case branch name from a free-text prompt */
-function deriveBranchName(prompt: string): string {
+/**
+ * Derive a branch name from a free-text prompt:
+ *   <ldap>/<linear-id>/<short-description> (or <ldap>/<short-description> without an ID)
+ */
+function deriveBranchName(prompt: string, ldap: string, linearId?: string | null): string {
   const slug = prompt
+    .replace(/https?:\/\/\S+/g, " ")                    // drop URLs
+    .replace(new RegExp(LINEAR_ID_RE.source, "gi"), " ") // drop the issue ID itself
     .toLowerCase()
     .replace(/[^a-z0-9\s/-]/g, " ")   // drop punctuation
     .split(/\s+/)
@@ -147,7 +182,10 @@ function deriveBranchName(prompt: string): string {
     .slice(0, 50)
     .replace(/-$/, "");
 
-  return `pi/${slug || "task"}`;
+  const parts = [ldap];
+  if (linearId) parts.push(linearId.toLowerCase());
+  parts.push(slug || "task");
+  return parts.join("/");
 }
 
 /** Make a branch name unique by appending -2, -3, etc. */
@@ -237,8 +275,8 @@ export default function worktreeExtension(pi: ExtensionAPI) {
     }
   }
 
-  /** Derive a branch name from the first user message in this session */
-  function branchFromSession(ctx: ExtensionContext): string {
+  /** First user message text in this session (used for branch derivation) */
+  function firstUserTextFromSession(ctx: ExtensionContext): string {
     const entries = ctx.sessionManager.getBranch();
     const firstUserText = entries
       .filter((e) => e.type === "message" && (e as any).message?.role === "user")
@@ -254,7 +292,23 @@ export default function worktreeExtension(pi: ExtensionAPI) {
         return "";
       })
       .find((t) => t.trim());
-    return deriveBranchName(firstUserText ?? "task");
+    return firstUserText ?? "task";
+  }
+
+  /**
+   * Resolve the Linear issue ID for this session: extract from the prompt,
+   * otherwise ask the user once (blank to skip).
+   */
+  async function resolveLinearId(ctx: ExtensionContext, promptText: string): Promise<string | null> {
+    const found = extractLinearId(promptText);
+    if (found) return found;
+    const input = await ctx.ui.input(
+      "Linear ticket",
+      "Linear issue ID for this branch (e.g. GTME-123) — blank to skip:",
+      "",
+    );
+    const trimmed = (input ?? "").trim();
+    return trimmed ? trimmed.toLowerCase() : null;
   }
 
   /**
@@ -332,7 +386,9 @@ export default function worktreeExtension(pi: ExtensionAPI) {
     }
 
     // Auto-create a new worktree
-    const baseBranch = branchFromSession(ctx);
+    const promptText = firstUserTextFromSession(ctx);
+    const linearId = await resolveLinearId(ctx, promptText);
+    const baseBranch = deriveBranchName(promptText, getLdap(repoRoot), linearId);
 
     // Check for collision — only ask the user if there's one
     let finalBranch: string;
@@ -461,19 +517,13 @@ export default function worktreeExtension(pi: ExtensionAPI) {
         }
 
         if (!branch) {
-          const entries = ctx.sessionManager.getBranch();
-          const firstUserText = entries
-            .filter((e) => e.type === "message" && (e as any).message?.role === "user")
-            .map((e) => {
-              const content = (e as any).message?.content;
-              if (typeof content === "string") return content;
-              if (Array.isArray(content)) {
-                return content.filter((c: any) => c.type === "text").map((c: any) => c.text).join(" ");
-              }
-              return "";
-            })
-            .find((t) => t.trim());
-          branch = deriveBranchName(firstUserText ?? "task");
+          const promptText = firstUserTextFromSession(ctx);
+          const linearId = await resolveLinearId(ctx, promptText);
+          branch = deriveBranchName(promptText, getLdap(repoRoot), linearId);
+        } else if (/^[A-Za-z][A-Za-z0-9]{1,9}-\d{1,6}$/.test(branch)) {
+          // Bare Linear ID given — expand to ldap/id/description format
+          const promptText = firstUserTextFromSession(ctx);
+          branch = deriveBranchName(promptText, getLdap(repoRoot), branch.toLowerCase());
         }
 
         branch = uniqueBranchName(repoRoot, branch);
