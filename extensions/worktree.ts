@@ -10,11 +10,18 @@
  * The only time the user is asked: when the derived branch name collides with
  * an existing branch/worktree.
  *
+ * Required mode:
+ *   If the primary checkout contains a `.pi/worktree-required` marker file,
+ *   the repo is in "worktree required" mode: mutating tool calls are NEVER
+ *   allowed in the primary checkout — even on a feature branch. The extension
+ *   either creates a worktree first or blocks the tool call.
+ *
  * Commands:
- *   /worktree new [branch]  — manually create a worktree from origin/main
- *   /worktree list          — show all worktrees for this repo
- *   /worktree switch <path> — switch session CWD to an existing worktree
- *   /worktree done          — remove current worktree and return to main checkout
+ *   /worktree new [branch]        — manually create a worktree from origin/main
+ *   /worktree list                — show all worktrees for this repo
+ *   /worktree switch <path>       — switch session CWD to an existing worktree
+ *   /worktree done                — remove current worktree and return to main checkout
+ *   /worktree require [on|off|status] — toggle required mode for this repo
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
@@ -88,6 +95,23 @@ function worktreeExistsAt(repoRoot: string, wtPath: string): boolean {
   return listWorktrees(repoRoot).some((w) => w.path === wtPath);
 }
 
+/** Root of the primary checkout (works from any linked worktree) */
+function getPrimaryRoot(repoRoot: string): string {
+  const r = git(["rev-parse", "--git-common-dir"], repoRoot);
+  if (!r.ok) return repoRoot;
+  const commonDir = path.resolve(repoRoot, r.stdout);
+  return path.dirname(commonDir);
+}
+
+function requiredMarkerPath(repoRoot: string): string {
+  return path.join(getPrimaryRoot(repoRoot), ".pi", "worktree-required");
+}
+
+/** Whether this repo mandates working in a dedicated worktree */
+function isWorktreeRequired(repoRoot: string): boolean {
+  return fs.existsSync(requiredMarkerPath(repoRoot));
+}
+
 /** Canonical main branch name for this remote */
 function remoteMainBranch(repoRoot: string): string {
   const r = git(["symbolic-ref", "refs/remotes/origin/HEAD"], repoRoot);
@@ -144,18 +168,19 @@ interface CreatedWorktree {
 async function createWorktree(
   repoRoot: string,
   branch: string,
-  mainBranch: string,
+  startPoint: string,
 ): Promise<CreatedWorktree> {
   const repoName = path.basename(repoRoot);
   const branchSlug = branch.replace(/\//g, "--");
   const worktreePath = path.join(path.dirname(repoRoot), `${repoName}--${branchSlug}`);
 
-  // Fetch latest origin/main
-  git(["fetch", "origin", mainBranch, "--quiet"], repoRoot);
+  // Fetch latest if branching from a remote ref
+  if (startPoint.startsWith("origin/")) {
+    git(["fetch", "origin", startPoint.slice("origin/".length), "--quiet"], repoRoot);
+  }
 
-  // Create worktree from origin/main
   const result = git(
-    ["worktree", "add", worktreePath, "-b", branch, `origin/${mainBranch}`],
+    ["worktree", "add", worktreePath, "-b", branch, startPoint],
     repoRoot,
   );
 
@@ -212,8 +237,33 @@ export default function worktreeExtension(pi: ExtensionAPI) {
     }
   }
 
-  /** Core logic: ensure we're in a worktree before allowing a mutating tool */
-  async function ensureWorktree(ctx: ExtensionContext): Promise<void> {
+  /** Derive a branch name from the first user message in this session */
+  function branchFromSession(ctx: ExtensionContext): string {
+    const entries = ctx.sessionManager.getBranch();
+    const firstUserText = entries
+      .filter((e) => e.type === "message" && (e as any).message?.role === "user")
+      .map((e) => {
+        const content = (e as any).message?.content;
+        if (typeof content === "string") return content;
+        if (Array.isArray(content)) {
+          return content
+            .filter((c: any) => c.type === "text")
+            .map((c: any) => c.text)
+            .join(" ");
+        }
+        return "";
+      })
+      .find((t) => t.trim());
+    return deriveBranchName(firstUserText ?? "task");
+  }
+
+  /**
+   * Core logic: ensure we're in a worktree before allowing a mutating tool.
+   * Returns a block result when the tool call must not proceed (required mode).
+   */
+  async function ensureWorktree(
+    ctx: ExtensionContext,
+  ): Promise<{ block: true; reason: string } | undefined> {
     if (state.worktreeReady) return;
     state.worktreeReady = true; // set eagerly to prevent re-entrant calls
 
@@ -234,6 +284,7 @@ export default function worktreeExtension(pi: ExtensionAPI) {
     const isPrimary = currentWt?.isPrimary ?? true;
     const branch = currentWt?.branch ?? currentBranch(cwd);
     const mainBranch = remoteMainBranch(repoRoot);
+    const required = isWorktreeRequired(repoRoot);
 
     if (!isPrimary) {
       // Already in a dedicated worktree — just record state and show widget
@@ -243,36 +294,45 @@ export default function worktreeExtension(pi: ExtensionAPI) {
       return;
     }
 
+    // We're in the PRIMARY checkout — decide the start point for a new worktree
+    let startPoint = `origin/${mainBranch}`;
+
     if (branch && branch !== mainBranch) {
-      // Primary worktree but already on a feature branch — pre-existing work,
-      // leave it alone. Show the branch in the widget so the user is aware.
-      state.worktreeReady = true; // don't auto-trigger
-      state.worktreePath = cwd;
-      state.branch = branch;
-      updateWidget(ctx);
-      return;
+      if (!required) {
+        // Primary worktree but already on a feature branch — pre-existing work,
+        // leave it alone. Show the branch in the widget so the user is aware.
+        state.worktreeReady = true; // don't auto-trigger
+        state.worktreePath = cwd;
+        state.branch = branch;
+        updateWidget(ctx);
+        return;
+      }
+
+      // Required mode: never edit the primary checkout, even on a feature
+      // branch. Ask which base to branch the new worktree from.
+      const choice = await ctx.ui.select(
+        "Worktree required — primary checkout is protected",
+        [
+          `New worktree from origin/${mainBranch}`,
+          `New worktree from current branch (${branch})`,
+          "Cancel (block this change)",
+        ],
+      );
+      if (!choice || choice.startsWith("Cancel")) {
+        state.worktreeReady = false; // re-check on next mutating call
+        return {
+          block: true,
+          reason:
+            "This repo requires all changes to be made in a dedicated git worktree — " +
+            "the primary checkout is protected. Run /worktree new (or ask the user) " +
+            "before making changes.",
+        };
+      }
+      if (choice.includes("current branch")) startPoint = branch;
     }
 
-    // We're in the primary worktree on main (or a branch) — auto-create a new worktree
-
-    // Derive branch name from first user message in this session
-    const entries = ctx.sessionManager.getBranch();
-    const firstUserText = entries
-      .filter((e) => e.type === "message" && (e as any).message?.role === "user")
-      .map((e) => {
-        const content = (e as any).message?.content;
-        if (typeof content === "string") return content;
-        if (Array.isArray(content)) {
-          return content
-            .filter((c: any) => c.type === "text")
-            .map((c: any) => c.text)
-            .join(" ");
-        }
-        return "";
-      })
-      .find((t) => t.trim());
-
-    const baseBranch = deriveBranchName(firstUserText ?? "task");
+    // Auto-create a new worktree
+    const baseBranch = branchFromSession(ctx);
 
     // Check for collision — only ask the user if there's one
     let finalBranch: string;
@@ -285,6 +345,14 @@ export default function worktreeExtension(pi: ExtensionAPI) {
       );
       if (!input) {
         state.worktreeReady = false; // allow retry
+        if (required) {
+          return {
+            block: true,
+            reason:
+              "Worktree creation was cancelled, and this repo requires a dedicated " +
+              "worktree for all changes. Run /worktree new before making changes.",
+          };
+        }
         return;
       }
       finalBranch = input;
@@ -293,11 +361,11 @@ export default function worktreeExtension(pi: ExtensionAPI) {
     }
 
     try {
-      ctx.ui.notify(`Creating worktree: ${finalBranch}`, "info");
+      ctx.ui.notify(`Creating worktree: ${finalBranch} (from ${startPoint})`, "info");
       const { worktreePath, branch: createdBranch } = await createWorktree(
         repoRoot,
         finalBranch,
-        mainBranch,
+        startPoint,
       );
 
       // Redirect the entire pi process into the new worktree
@@ -310,6 +378,15 @@ export default function worktreeExtension(pi: ExtensionAPI) {
     } catch (err: any) {
       state.worktreeReady = false; // allow retry
       ctx.ui.notify(`Worktree creation failed: ${err.message}`, "error");
+      if (required) {
+        return {
+          block: true,
+          reason:
+            `Worktree creation failed (${err.message}), and this repo requires a ` +
+            "dedicated worktree for all changes. Do not modify files in the primary " +
+            "checkout; resolve the worktree issue first.",
+        };
+      }
     }
   }
 
@@ -327,7 +404,7 @@ export default function worktreeExtension(pi: ExtensionAPI) {
     }
 
     if (isMutating) {
-      await ensureWorktree(ctx);
+      return await ensureWorktree(ctx);
     }
   });
 
@@ -357,7 +434,7 @@ export default function worktreeExtension(pi: ExtensionAPI) {
   // ── Commands ──────────────────────────────────────────────────────────────
 
   pi.registerCommand("worktree", {
-    description: "Manage git worktrees: new [branch] | list | switch <path> | done",
+    description: "Manage git worktrees: new [branch] | list | switch <path> | done | require [on|off|status]",
     handler: async (args, ctx) => {
       const [sub, ...rest] = (args ?? "").trim().split(/\s+/);
       const cwd = process.cwd();
@@ -404,7 +481,7 @@ export default function worktreeExtension(pi: ExtensionAPI) {
         try {
           ctx.ui.notify(`Creating worktree: ${branch}`, "info");
           const { worktreePath, branch: createdBranch } = await createWorktree(
-            repoRoot, branch, mainBranch,
+            repoRoot, branch, `origin/${mainBranch}`,
           );
           process.chdir(worktreePath);
           state.worktreeReady = true;
@@ -414,6 +491,34 @@ export default function worktreeExtension(pi: ExtensionAPI) {
           ctx.ui.notify(`✓ ${worktreePath}`, "success");
         } catch (err: any) {
           ctx.ui.notify(`Failed: ${err.message}`, "error");
+        }
+        return;
+      }
+
+      // ── /worktree require [on|off|status] ────────────────────────────────
+      if (sub === "require") {
+        const action = rest[0] ?? "status";
+        const markerPath = requiredMarkerPath(repoRoot);
+
+        if (action === "on") {
+          fs.mkdirSync(path.dirname(markerPath), { recursive: true });
+          fs.writeFileSync(
+            markerPath,
+            "This repo requires all agent changes to be made in a dedicated git worktree.\n" +
+              "Managed by the pi worktree extension (/worktree require on|off).\n",
+          );
+          ctx.ui.notify(`✓ Worktree now REQUIRED for this repo\n${markerPath}`, "success");
+        } else if (action === "off") {
+          fs.rmSync(markerPath, { force: true });
+          ctx.ui.notify("✓ Worktree requirement removed for this repo", "success");
+        } else {
+          const required = fs.existsSync(markerPath);
+          ctx.ui.notify(
+            required
+              ? `Worktree is REQUIRED for this repo\n${markerPath}`
+              : "Worktree is not required for this repo (auto-create on main only)",
+            "info",
+          );
         }
         return;
       }
@@ -483,7 +588,7 @@ export default function worktreeExtension(pi: ExtensionAPI) {
         return;
       }
 
-      ctx.ui.notify("Usage: /worktree new [branch] | list | switch <path> | done", "info");
+      ctx.ui.notify("Usage: /worktree new [branch] | list | switch <path> | done | require [on|off|status]", "info");
     },
   });
 }
