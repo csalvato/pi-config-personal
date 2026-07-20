@@ -65,6 +65,12 @@ Before submitting the PR description, check:
 - Did you explain how this fits into the larger plan, if there is one?
 - Did you include exact test commands?
 
+## Related skills
+
+- **ste-technical-writing** — Load it alongside this skill. Its STE-derived sentence
+  and vocabulary rules (active voice, one term per concept, sentence-length caps, anti-slop
+  rules) apply to PR descriptions too. This skill wins on structure and required sections.
+
 ## Rewrite Pattern
 
 If a description feels too dense, rewrite it like this:
