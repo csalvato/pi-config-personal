@@ -363,26 +363,7 @@ export default function worktreeExtension(pi: ExtensionAPI) {
       }
 
       // Required mode: never edit the primary checkout, even on a feature
-      // branch. Ask which base to branch the new worktree from.
-      const choice = await ctx.ui.select(
-        "Worktree required — primary checkout is protected",
-        [
-          `New worktree from origin/${mainBranch}`,
-          `New worktree from current branch (${branch})`,
-          "Cancel (block this change)",
-        ],
-      );
-      if (!choice || choice.startsWith("Cancel")) {
-        state.worktreeReady = false; // re-check on next mutating call
-        return {
-          block: true,
-          reason:
-            "This repo requires all changes to be made in a dedicated git worktree — " +
-            "the primary checkout is protected. Run /worktree new (or ask the user) " +
-            "before making changes.",
-        };
-      }
-      if (choice.includes("current branch")) startPoint = branch;
+      // branch. Always create the new worktree from the remote main branch.
     }
 
     // Auto-create a new worktree
