@@ -1,6 +1,18 @@
 # Pi Config — Personal
 
-Personal (non-work-specific) configuration for [pi](https://github.com/mariozechner/pi-coding-agent) — extensions, skills, and agents.
+Personal (non-work-specific) configuration for [pi](https://github.com/mariozechner/pi-coding-agent) — extensions, skills, agents, and global instructions.
+
+## Global Instructions
+
+| File | Description |
+|------|-------------|
+| `AGENTS.md` | Global writing rules loaded into every pi session. Copy to `~/.pi/agent/AGENTS.md`. |
+
+Pi loads `~/.pi/agent/AGENTS.md` at startup for every session, then layers project
+context files on top. Use `--no-context-files` to skip it.
+
+For rules that cannot be skipped by a flag, rename the file to `APPEND_SYSTEM.md`.
+Pi appends that file to the system prompt instead.
 
 ## Extensions
 
@@ -42,4 +54,5 @@ Personal (non-work-specific) configuration for [pi](https://github.com/mariozech
 ```bash
 git clone git@github.com:csalvato/pi-config-personal.git
 # Copy or symlink into ~/.pi/agent/
+cp AGENTS.md ~/.pi/agent/AGENTS.md
 ```
