@@ -39,6 +39,14 @@ Pi appends that file to the system prompt instead.
 | `pi-extension-dev` | Sync local pi extensions/skills to the right GitHub config repo |
 | `system-design` | Structured multi-phase system design workflow |
 
+## Reference
+
+Generic copies kept for posterity. Not installed, not loaded by pi.
+
+| File | Description |
+|------|-------------|
+| `reference/pr-review.md` | Code review skill: 13 quality lenses, flat change-list output, posting rules |
+
 ## Agents
 
 | Agent | Description |
