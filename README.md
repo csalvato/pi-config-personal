@@ -37,15 +37,8 @@ Pi appends that file to the system prompt instead.
 | `cmux-workspace` | Multi-pane cmux workspace management |
 | `personal-memory` | Persistent memory via Logseq/QMD |
 | `pi-extension-dev` | Sync local pi extensions/skills to the right GitHub config repo |
+| `pr-review` | Code review against 13 quality lenses, with a flat blocking-first change list |
 | `system-design` | Structured multi-phase system design workflow |
-
-## Reference
-
-Generic copies kept for posterity. Not installed, not loaded by pi.
-
-| File | Description |
-|------|-------------|
-| `reference/pr-review.md` | Code review skill: 13 quality lenses, flat change-list output, posting rules |
 
 ## Agents
 

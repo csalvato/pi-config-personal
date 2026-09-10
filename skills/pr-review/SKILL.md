@@ -5,10 +5,6 @@ description: Review a pull request against a fixed set of quality lenses (bugs, 
 
 # PR Review
 
-> **Reference copy, not installed.** This is a generic version of a work skill, kept for
-> posterity. Nothing here is employer-specific. It is not wired into pi and is not meant
-> to be used as-is.
-
 Use this skill for any code review of a PR, diff, or branch.
 
 ## Before reviewing
