@@ -44,6 +44,12 @@ They confirm these facts at the provider boundary:
 
 The suite also covers role visibility, context and image checks, cancellation, malformed results, config conflicts, footer behavior, and model-thinking changes.
 
+## Persistent-consent update (2026-10-10)
+
+TypeScript checking passed after the persistent TypeSafe consent change.
+The targeted core, extension, Pi loader, and real-session integration suite passed 67 tests.
+The tests cover legacy config migration and consent reuse across session starts. They make no live TypeSafe calls.
+
 ## Live Jev campaign
 
 The campaign used public synthetic tasks only.
@@ -102,6 +108,7 @@ A new full 60-fixture campaign is still needed because the first-choice question
 | Check                                                                   | Result                           |
 | ----------------------------------------------------------------------- | -------------------------------- |
 | Router request excludes history, system prompt, tool output, and images | Pass in isolated agent-loop test |
+| Persistent consent skips the prompt across session starts                 | Pass in isolated extension test |
 | Live result files exclude task text                                     | Pass                             |
 | Decision entries exclude task text and keys                             | Pass in automated tests          |
 | Earlier input transformer can change router input                       | Open limitation                  |

@@ -8,7 +8,7 @@ You assign the models and write the selection criteria. Jev chooses directly amo
 
 ## Start
 
-Interactive sessions start in automatic routing mode. Before the first routed request, the extension asks for TypeSafe data-sharing consent.
+Interactive sessions start in automatic routing mode. Unless `typeSafeConsent` is true in the router config, the extension asks for consent before the first routed request in each session.
 Startup does not make a TypeSafe request. Missing credentials or declined consent turn routing off for the session.
 Headless and RPC sessions start with routing off. Configure roles without a TypeSafe key.
 
@@ -22,7 +22,7 @@ Set `TYPESAFE_API_KEY` through your shell or secret manager before starting pi.
 A running pi process does not inherit later shell changes. Restart pi after setting the key.
 
 1. Run `/router test Write a README for a public calculator project`.
-2. Read and accept the data-sharing prompt.
+2. If `typeSafeConsent` is false, accept the prompt before the first routed request.
 3. Run `/router shadow` to inspect recommendations on your next requests.
 4. Run `/router auto` when you want pi to apply the choices.
 5. Run `/router off` to stop routing.
@@ -44,8 +44,9 @@ If this path is registered in pi settings, `/reload` loads the extension without
 | `/router test <task>` | Classify a task without running it or changing the model           |
 | `/router explain`     | Show the last choices, probabilities, confidence, and routing time |
 
-Modes apply to the current session only. Interactive startup, reload, and session replacement restore automatic routing and require fresh consent.
-Tree navigation turns routing off. `/router off` disables routing until you re-enable it or start or reload a session.
+Modes apply to the current session only. Interactive startup, reload, and session replacement restore automatic routing.
+With persistent consent enabled, these sessions route without another consent prompt. Tree navigation turns routing off.
+`/router off` disables routing until you re-enable it or start or reload a session.
 A manual model or thinking-level change pauses routing. Run `/router auto` or `/router shadow` to resume.
 
 ## Current role display
@@ -166,7 +167,8 @@ Requests longer than 8,000 characters keep the current model without calling Jev
 
 Role edits persist in `~/.pi/agent/jev-router.json`, or the equivalent path under a custom pi agent directory.
 The extension writes this file with owner-only permissions. It detects concurrent edits rather than overwriting them.
-The file contains model choices and criteria, not API keys or captured task text.
+The file contains model choices, criteria, and the persistent TypeSafe consent choice. It does not contain API keys or captured task text.
+Set `typeSafeConsent` to `false` to require a session consent prompt again.
 
 | Field        | Default               | Meaning                                                |
 | ------------ | --------------------- | ------------------------------------------------------ |
@@ -174,6 +176,7 @@ The file contains model choices and criteria, not API keys or captured task text
 | `jevModel`   | `jev-1.13.0`          | Pinned TypeSafe model version                          |
 | `timeoutMs`  | `3000`                | Deadline per Jev call                                  |
 | `newRole`    | `ask`                 | New-task behavior: `ask` or `auto`                     |
+| `typeSafeConsent` | `false`           | Persist TypeSafe data-sharing consent across sessions  |
 | `autoModels` | `[]`                  | Allowed models for discovery                           |
 | `roles`      | Five unassigned roles | Labels, criteria, models, and optional thinking levels |
 

@@ -271,6 +271,23 @@ test("default auto applies a role after consent without an auto command", async 
   await h.prompt();
   assert.equal(h.requests.length, 2);
 });
+test("persistent TypeSafe consent skips prompts across session starts", async (t) => {
+  const config = configured();
+  config.typeSafeConsent = true;
+  const h = harness(config);
+  t.after(h.cleanup);
+  h.confirms.push(false, false);
+  await h.setup();
+  h.choices.push({ route: { choice: KEEP } });
+  await h.prompt();
+  assert.equal(h.requests.length, 1);
+  await h.emit("session_shutdown");
+  await h.setup();
+  h.choices.push({ route: { choice: KEEP } });
+  await h.prompt();
+  assert.equal(h.requests.length, 2);
+  assert.equal(h.confirms.length, 2, "persistent consent skips both prompts");
+});
 test("default auto requires a key and remains off in headless modes", async (t) => {
   for (const mode of ["tui", "rpc", "print"]) {
     const h = harness(configured());

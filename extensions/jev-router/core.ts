@@ -30,6 +30,7 @@ export interface Config {
   jevModel: string;
   timeoutMs: number;
   newRole: "ask" | "auto";
+  typeSafeConsent: boolean;
   autoModels: ModelRef[];
   roles: Role[];
 }
@@ -103,6 +104,7 @@ export function defaults(): Config {
     jevModel: "jev-1.13.0",
     timeoutMs: 3000,
     newRole: "ask",
+    typeSafeConsent: false,
     autoModels: [],
     roles: structuredClone(STARTERS.slice(0, 5)),
   };
@@ -130,6 +132,8 @@ export function parseConfig(value: unknown): Config {
     Number(value.timeoutMs) < 100 ||
     Number(value.timeoutMs) > 30000 ||
     !["ask", "auto"].includes(String(value.newRole)) ||
+    (value.typeSafeConsent !== undefined &&
+      typeof value.typeSafeConsent !== "boolean") ||
     !Array.isArray(value.autoModels) ||
     value.autoModels.length > 100 ||
     !value.autoModels.every(ref) ||
@@ -157,6 +161,8 @@ export function parseConfig(value: unknown): Config {
     ids.add(role.id);
   }
   const config = structuredClone(value);
+  // Older configs do not include a persistent TypeSafe consent choice.
+  if (config.typeSafeConsent === undefined) config.typeSafeConsent = false;
   // Old configs may contain a cutoff. Confidence is now diagnostic only.
   delete config.confidence;
   return config as unknown as Config;

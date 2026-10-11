@@ -472,7 +472,10 @@ export function registerRouter(pi: ExtensionAPI, options: Options): void {
       );
       return false;
     }
-    if (consent) return true;
+    if (consent || config.typeSafeConsent) {
+      consent = true;
+      return true;
+    }
     if (!ctx.hasUI) return false;
     consent = await ctx.ui.confirm(
       "Allow task text to TypeSafe for this session?",

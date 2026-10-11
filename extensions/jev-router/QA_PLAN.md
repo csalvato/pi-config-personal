@@ -71,7 +71,7 @@ These are test targets, not confirmed defects.
 | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | What does an 8,000-character limit count?                      | Document the unit. Test ASCII and Unicode at the boundary.                                                          |
 | Can cancelling a save dialog still apply a model?              | Cancelling model selection keeps current. Declining role saving can still apply the chosen model once.              |
-| Does turning routing off revoke data-sharing consent?          | Off stops routing. Consent may remain until session shutdown; document this distinction.                            |
+| Does turning routing off revoke data-sharing consent?          | Off stops routing for the session. Persistent consent remains until `typeSafeConsent` is set to `false`.              |
 | How does Ask mode differ from the discovery pool?              | Jev's suggestion uses the pool. A manual choice may use any available, eligible model within the session scope.     |
 | What happens if another extension changes the model?           | Pause routing rather than fight that extension. Report this as an external change, not necessarily a manual choice. |
 | What if the model changes but thinking or config saving fails? | Report the actual state. Never say “kept current” after a successful model change.                                  |
@@ -88,14 +88,14 @@ The expected result must come from this contract, not from the implementation un
 
 | ID  | Priority | Case                                                              | Required result                                                                                                                                       |
 | --- | -------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| M01 | P0       | Fresh startup; no consent; missing key; declined consent          | No TypeSafe request. User task still proceeds with its current model.                                                                                 |
+| M01 | P0       | Fresh startup; persistent consent false or true; missing key; decline | False asks for consent; decline sends no request. True skips the prompt. Missing credentials stop routing. The task still runs with its current model. |
 | M02 | P0       | Shadow and `/router test`                                         | Classification only. No model, thinking, tool, permission, or role-file change.                                                                       |
 | M03 | P0       | Auto chooses each configured role                                 | Apply that role's model and effective thinking before the first provider request.                                                                     |
 | M04 | P0       | Assigned role fails scope, availability, or context checks        | Still offer the role to Jev. Keep current after selection and report the blocking reason.                                                             |
 | M05 | P0       | Planning and Review use the current model near its context limit  | Both choices remain present. Apply max thinking without a model switch.                                                                               |
 | M06 | P0       | Keep current; winning role at 0, 0.52, 0.65, and 1 confidence     | Keep leaves model and thinking unchanged. Any valid top-ranked role can act, even at zero confidence.                                                 |
 | M07 | P0       | User changes model or thinking                                    | Pause routing. Re-enabling resumes it. Router-owned changes do not pause it.                                                                          |
-| M08 | P0       | Reload, new session, resume, fork, clone, and tree navigation     | Routing is off afterward. Old results cannot mutate the new session.                                                                                  |
+| M08 | P0       | Reload, new session, resume, fork, clone, and tree navigation     | Interactive sessions restore auto routing and honor persistent consent. Headless modes and tree navigation stay off. Old results cannot mutate the new session. |
 | M09 | P0       | Multiple tool turns, retry, and compaction                        | No extra classification within the same accepted user request.                                                                                        |
 | M10 | P0       | Queued steering, queued follow-up, and extension-generated input  | Keep the active model. No stale prior input is classified.                                                                                            |
 | M11 | P1       | Raw input passes through skill expansion or another input handler | Capture the intended input once. Never send expanded private context by mistake.                                                                      |
@@ -295,7 +295,7 @@ Save and restore only the settings changed for this test. Do not reset unrelated
 12. Test both Ask and automatic discovery in the isolated config.
 13. Pin a model manually and confirm routing pauses.
 14. Run `/router off` during a delayed routing request.
-15. Reload and confirm routing stays off until re-enabled.
+15. Reload and confirm interactive auto routing resumes. Check both persistent-consent settings.
 16. Remove the extension from the isolated settings and confirm pi starts cleanly.
 
 Use at most 12 short live coding-model requests within the remaining Jev call budget.

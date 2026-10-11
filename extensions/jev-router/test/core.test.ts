@@ -62,6 +62,7 @@ test("default config has five roles and safe discovery settings", () => {
   const config = defaults();
   assert.equal(config.roles.length, 5);
   assert.equal(config.newRole, "ask");
+  assert.equal(config.typeSafeConsent, false);
   assert.deepEqual(config.autoModels, []);
   assert.deepEqual(parseConfig(config), config);
   config.roles[0].label = "Changed";
@@ -85,6 +86,12 @@ test("config rejects unsafe limits, duplicates, reserved names, and malformed mo
   const config = defaults();
   config.roles.push(config.roles[0]);
   assert.throws(() => parseConfig(config));
+});
+test("legacy configs default persistent TypeSafe consent to false", () => {
+  const config = defaults() as Partial<ReturnType<typeof defaults>>;
+  delete config.typeSafeConsent;
+  assert.equal(parseConfig(config).typeSafeConsent, false);
+  assert.throws(() => parseConfig({ ...defaults(), typeSafeConsent: "yes" }));
 });
 test("legacy confidence cutoffs are ignored and removed on the next save", () => {
   const dir = mkdtempSync(join(tmpdir(), "jev-legacy-config-"));
