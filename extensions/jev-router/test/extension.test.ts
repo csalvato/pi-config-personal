@@ -236,10 +236,13 @@ function configured() {
   return config;
 }
 
-test("starts off and does not send tasks without explicit opt-in", async (t) => {
+test("default auto sends nothing at startup or after declined consent", async (t) => {
   const h = harness();
   t.after(h.cleanup);
   await h.setup();
+  assert.equal(h.requests.length, 0);
+  h.confirms.push(false);
+  await h.prompt();
   await h.prompt();
   assert.equal(h.requests.length, 0);
   h.confirms.push(false);
@@ -250,6 +253,35 @@ test("starts off and does not send tasks without explicit opt-in", async (t) => 
   await h.command("auto");
   await h.prompt();
   assert.equal(h.requests.length, 0);
+});
+test("default auto applies a role after consent without an auto command", async (t) => {
+  const h = harness(configured());
+  t.after(h.cleanup);
+  await h.setup();
+  h.choices.push({ route: { choice: "coding" } });
+  await h.prompt();
+  assert.equal(h.requests.length, 1);
+  assert.equal(h.switches[0]?.id, "second");
+  assert.equal(h.thinking, "high");
+  h.confirms.push(false);
+  await h.prompt();
+  assert.equal(h.requests.length, 2, "consent is reused within the session");
+  assert.equal(h.confirms.length, 1);
+  await h.command("off");
+  await h.prompt();
+  assert.equal(h.requests.length, 2);
+});
+test("default auto requires a key and remains off in headless modes", async (t) => {
+  for (const mode of ["tui", "rpc", "print"]) {
+    const h = harness(configured());
+    t.after(h.cleanup);
+    h.ctx.mode = mode;
+    if (mode === "tui") h.setKey(undefined);
+    await h.setup();
+    await h.prompt();
+    assert.equal(h.requests.length, 0);
+    assert.equal(h.switches.length, 0);
+  }
 });
 test("shadow records a choice without switching, changing thinking, or learning", async (t) => {
   const h = harness(configured());
@@ -694,7 +726,7 @@ test("turning routing off cancels in-flight routing", async (t) => {
   assert.equal(h.switches.length, 0);
   assert.equal(h.records.length, 0);
 });
-test("reload and tree navigation disable routing", async (t) => {
+test("tree navigation disables routing; reload restores auto with fresh consent", async (t) => {
   const h = harness(configured());
   t.after(h.cleanup);
   await h.setup();
@@ -705,14 +737,19 @@ test("reload and tree navigation disable routing", async (t) => {
   await h.command("auto");
   await h.emit("session_shutdown");
   await h.setup();
+  h.confirms.push(false);
   await h.prompt();
   assert.equal(h.requests.length, 0);
+  await h.setup();
+  await h.prompt();
+  assert.equal(h.requests.length, 1);
 });
 test("test command classifies without running an agent or changing models", async (t) => {
   const h = harness(configured());
   t.after(h.cleanup);
   await h.setup();
   h.choices.push({ route: { choice: "coding" } });
+  await h.command("off");
   await h.command("test Implement a public calculator");
   assert.equal(h.records.at(-1).mode, "test");
   assert.equal(h.switches.length, 0);

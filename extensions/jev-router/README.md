@@ -8,7 +8,9 @@ You assign the models and write the selection criteria. Jev chooses directly amo
 
 ## Start
 
-The extension starts with routing off. Configure roles without a TypeSafe key.
+Interactive sessions start in automatic routing mode. Before the first routed request, the extension asks for TypeSafe data-sharing consent.
+Startup does not make a TypeSafe request. Missing credentials or declined consent turn routing off for the session.
+Headless and RPC sessions start with routing off. Configure roles without a TypeSafe key.
 
 1. Load the extension with `pi -e ~/.pi/agent/prototypes/jev-router/index.ts`.
 2. Run `/router roles`.
@@ -42,7 +44,8 @@ If this path is registered in pi settings, `/reload` loads the extension without
 | `/router test <task>` | Classify a task without running it or changing the model           |
 | `/router explain`     | Show the last choices, probabilities, confidence, and routing time |
 
-Modes apply to the current session only. Startup, reload, session replacement, and tree navigation turn routing off.
+Modes apply to the current session only. Interactive startup, reload, and session replacement restore automatic routing and require fresh consent.
+Tree navigation turns routing off. `/router off` disables routing until you re-enable it or start or reload a session.
 A manual model or thinking-level change pauses routing. Run `/router auto` or `/router shadow` to resume.
 
 ## Current role display

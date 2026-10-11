@@ -901,7 +901,7 @@ export function registerRouter(pi: ExtensionAPI, options: Options): void {
   pi.on("session_start", (_event, ctx) => {
     active?.abort();
     roleDisplay.clear(ctx);
-    mode = "off";
+    mode = ctx.mode === "tui" ? "auto" : "off";
     consent = false;
     pinned = false;
     pendingInput = undefined;
@@ -932,6 +932,11 @@ export function registerRouter(pi: ExtensionAPI, options: Options): void {
     const prompt = pendingInput;
     pendingInput = undefined;
     if (mode === "off" || pinned || prompt === undefined) return;
+    if (!consent && !(await allowNetwork(ctx))) {
+      stop(ctx);
+      return;
+    }
+    if (!["auto", "shadow"].includes(mode) || pinned) return;
     await route(ctx, prompt, !!event.images?.length);
   });
   pi.on("model_select", (event, ctx) => {
