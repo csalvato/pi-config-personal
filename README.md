@@ -20,11 +20,8 @@ Pi appends that file to the system prompt instead.
 |-----------|-------------|
 | `cmux-notify.ts` | Cmux notification integration |
 | `cmux-tab-title.ts` | Cmux tab title management |
-| `plan-mode/` | Read-only planning mode with todo tracking |
 | `pr-tracker.ts` | PR tracking utilities |
-| `questionnaire.ts` | Interactive single- and multi-question UI tool |
 | `web-search.ts` | Web search via DuckDuckGo + Jina Reader |
-| `wezterm-tab-title.ts` | WezTerm tab title management |
 | `worktree.ts` | Git worktree management |
 
 ## Skills
