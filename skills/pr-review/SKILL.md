@@ -9,7 +9,7 @@ Use this skill for any code review of a PR, diff, or branch.
 
 ## Before reviewing
 
-1. Get the actual diff with `gh pr diff` and `gh pr view`. Fetching a private repo URL directly returns 404, so always go through the CLI. Graphite URLs contain the PR number; use it with `gh`.
+1. Get the actual diff. For `squareup` repos, use the `gh-pr-read` skill (`gh pr diff`, `gh pr view`) — direct URL fetching returns 404 on private repos. Graphite URLs contain the PR number; use it with `gh`.
 2. Read the surrounding code, not just the diff. A change is only reviewable in context.
 3. Read the repo's `AGENTS.md` / `CLAUDE.md` and any `docs/` the change touches, so review comments match project conventions.
 
@@ -26,10 +26,11 @@ Evaluate the change against each of these, in order. Evaluate against all of the
 7. **Evergreen comments** — comments are evergreen and say WHY something unusual was done, never WHAT the code does. If the code does not self-express, the fix is a refactor, not a comment: rename it, extract it, or split it.
 8. **Test descriptions** — a test name states behavior as a black box, in the reader's language: no class, column, flag, or migration number. `buckets cut on the v0201 boundaries` is wrong; `a business with no reviews is filed separately from one with ten` is right. If the name only makes sense after reading the code, rewrite it.
 9. **Lint suppressions** — every new `@Suppress`, `noqa`, `eslint-disable`, or `@SuppressWarnings` is a finding by default, and widening an existing list counts as new. A suppression shipped with the code it silences is near-always the wrong fix: `LongMethod` means extract a function, not annotate one. Accept it only when the rule is genuinely wrong for that site, such as generated code or a framework-mandated signature, and an adjacent comment says why.
-10. **Test implementation** — tests assert behavior, not the current implementation. Reject change-detector tests: assertions copied from whatever the code returns, snapshots with no stated expectation, tests that must change when behavior does not. Khorikov calls this resistance to refactoring in *Unit Testing*. Ask of each assertion: if this fails, has something a user cares about broken?
-11. **Security** — walk the OWASP Top 10 against the changed lines, weighted toward authorization and untrusted input. Name the attacker and the asset or it is not a finding: "a signed-in user in tenant A can read tenant B's invoices."
+10. **Test implementation** — Tests assert behavior, not the current implementation. Reject change-detector tests: assertions copied from whatever the code returns, snapshots with no stated expectation, tests that must change when behavior does not. Khorikov calls this resistance to refactoring in *Unit Testing*. Ask of each assertion: if this fails, has something a user cares about broken? Also identify meaningful success and failure paths with no coverage, and verify that fakes and stubs match the real dependency's behavior. Passing tests do not validate a production contract when the fake repeats the same false assumption.
+11. **Security** — walk the OWASP Top 10 against the changed lines, weighted toward authorization and untrusted input. Name the attacker and the asset or it is not a finding: "a signed-in user in unit A can read unit B's payouts."
 12. **Performance** — flag work that scales with data or traffic: a call inside a loop, an unbounded query, a new predicate with no index. Follow Gregg's discipline in *Systems Performance* and state the multiplier. No number, no finding.
 13. **Risk** — exposure and blast radius decide what blocks, as Nygard frames them in *Release It!*. Flagged or unreleased code rarely blocks; live money, auth, and data mutations usually do. Report only unmitigated risk: no flag, no rollback, an irreversible migration.
+14. **Integration contracts** — Identify assumptions the changed code makes about its callers and dependencies. Verify each against the real implementation, protocol, or a safe focused check. Check error codes and response shapes, timeout budgets, cancellation, process cleanup, side effects, and which layer owns validation or business rules. A fake that repeats the same assumption does not verify it.
 
 ## Output — a change list, not a report
 
@@ -60,10 +61,10 @@ Report findings in the session as one flat list, blocking first, one or two line
 
 When asked to post:
 
-1. Read what is already there first — `gh api repos/OWNER/REPO/pulls/N/comments`, `.../pulls/N/reviews`, and bot comments on `.../issues/N/comments`. Never re-post a finding a human or bot already made; endorse it in one line instead.
+1. Read what is already there first — `gh api repos/OWNER/REPO/pulls/N/comments`, `.../pulls/N/reviews`, and bot comments on `.../issues/N/comments` (builderbot, sev-detector, owner-owl). Never re-post a finding a human or bot already made; endorse it in one line instead.
 2. Post a single review: `gh api repos/OWNER/REPO/pulls/N/reviews` with `event=COMMENT` and inline `comments[]` pinned to `path` + `line` + `side: RIGHT`. Lines must fall inside a diff hunk, so compute them from the raw diff hunk headers.
 3. **Every AI-authored comment must be visibly marked as AI.** The review body starts with `🤖 ` and one line naming the tool, e.g. `🤖 **AI-assisted review** (pi + Claude). Findings verified against the code; treat as reviewer input, not an approval gate.` Never post an unmarked comment that reads as if a human wrote it.
-4. Shape every inline comment the same way: 🤖, then `(blocking)` or `(non-blocking)`, then **Finding.** what you see, **Why change it.** the concrete cost, **Recommendation.** the change you want. Inline comments hold the full explanation and any suggested code.
+4. Write every inline comment with the `pr-comment-writing` skill. Follow its rules.
 5. Report back only: count posted, what was skipped as duplicate, and the review URL.
 
 **Never push commits, branches, or code changes to someone else's PR.** Reviewing means posting comments. If a fix requires code, describe it in the comment or offer to open a separate branch — do not touch the author's branch.
