@@ -36,6 +36,7 @@ Pi appends that file to the system prompt instead.
 | `pi-extension-dev` | Sync local pi extensions/skills to the right GitHub config repo |
 | `pr-review` | Code review against 13 quality lenses, with a flat blocking-first change list |
 | `system-design` | Structured multi-phase system design workflow |
+| `tufte-viz` | Tufte-based chart design with six graph-literacy levels; aim for Levels 1-2 in the main view |
 
 ## Agents
 
