@@ -26,13 +26,16 @@ If the user explicitly wants a branded marketing visual, obey that. Otherwise, s
    - What decision should the display support?
    - What level of exactness matters: pattern, ranking, or precise values?
 
-2. Match the form to the comparison.
-   - Time series -> line chart, sparkline, or small multiples
-   - Rank/compare categories -> bars, dot plot, or table
-   - Exact values matter -> table or direct labels
-   - Repeated comparison across segments -> small multiples with shared scales
-   - Multivariate evidence -> layered plot, table + sparkline, or tightly structured small multiples
-   - Part-to-whole -> prefer bars/tables over pie charts unless the pie is genuinely clearer
+2. Match the form to the comparison and the reader. **Aim for Levels 1-2 in the main view.** Use the six-level guide in `references/graph-literacy-levels.md`. It is a design guide, not a test of readers.
+   - Level 1: a big number with context, an accurate icon array, or an up/down cue with a labeled change.
+   - Level 2: before/after bars, a single-percent ring with a printed value, or ranked bars with direct labels and a common scale. Use bars or text when exact comparison matters.
+   - Levels 3-6: use when the question needs them. Lead with a Level 1-2 finding and keep needed detail and uncertainty close to the data.
+   - Time series -> line chart, sparkline, or small multiples, with a plain change summary first.
+   - Rank/compare categories -> direct-labeled bars, dot plot, or table.
+   - Exact values matter -> table or direct labels.
+   - Repeated comparison across segments -> small multiples with shared scales and a simple lead-in.
+   - Multivariate evidence -> layered plot, table + sparkline, or tightly structured small multiples.
+   - Part-to-whole -> prefer bars/tables over pie charts unless the pie is clearer.
 
 3. Start plain.
    - Use neutral typography and restrained color.
@@ -96,3 +99,4 @@ When critiquing or designing, explain:
 
 Read `references/tufte-principles.md` for the core doctrine.
 Read `references/default-patterns.md` for default patterns by display type.
+Read `references/graph-literacy-levels.md` for all six levels and the Level 1-2 goal.

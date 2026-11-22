@@ -1,8 +1,14 @@
 # Default patterns
 
+## Main view
+
+- Aim for Levels 1-2: a number with context, before/after bars, or ranked bars.
+- Put the main finding first. Use a harder chart only when the question needs it.
+- Pair that chart with a simple takeaway. Keep key limits and uncertainty visible.
+
 ## Time series
 
-- Start with a line chart.
+- Start with a line chart when the trend matters. Lead with a plain change summary.
 - Keep gridlines sparse and light.
 - Annotate regime shifts, peaks, troughs, or interventions only when they matter.
 - Use small multiples for segmented comparison.
